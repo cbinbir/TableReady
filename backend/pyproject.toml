@@ -1,0 +1,30 @@
+[project]
+name = "tableready-backend"
+version = "0.1.0"
+description = "TableReady backend API (FastAPI), implementing openapi.yaml"
+readme = "README.md"
+authors = [
+    { name = "Can Binbir", email = "canbinbir@gmail.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "uvicorn[standard]>=0.53.0",
+]
+
+[project.scripts]
+tableready-backend = "tableready_backend:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "httpx2>=2.13.0",
+    "pytest>=9.1.1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
