@@ -1,0 +1,503 @@
+openapi: 3.0.3
+info:
+  title: TableReady API
+  version: 0.1.0
+  description: |
+    Backend contract expected by the TableReady frontend (`frontend/src/api/client.ts`).
+
+    This spec describes exactly what the frontend calls today — no more, no less. It was
+    derived by reading `frontend/src/api/client.ts`, `frontend/src/api/types.ts`, and the
+    mock implementation in `frontend/src/api/mockBackend.ts` that `client.ts` currently
+    delegates to. When a real backend is built, `client.ts` is the only frontend file that
+    should need to change (swap each method body for a `fetch` call against these endpoints).
+
+    Notes on scope:
+    - `GET /parties` backs both the Waitlist screen (client-side filtered to
+      `status=waiting`, sorted by `order`) and the History screen (all statuses, sorted by
+      `createdAt` descending). There is a single list endpoint, not separate ones.
+    - The mock backend also exposes a `resetDemoData` helper used only to reseed local
+      sample data for the mock itself. It is not wired to any UI action and is not a
+      real backend concern, so it is intentionally omitted from this spec.
+    - Authentication: the product spec calls for a single shared login at the host stand
+      (no individual accounts, no roles), but the frontend does not implement any login
+      flow yet — no request sends a credential, token, or session header. Accordingly, no
+      endpoint below declares a security requirement. When shared-login auth is built, it
+      is expected to gate the whole API behind one session (e.g. a cookie set by a login
+      endpoint), not per-endpoint scopes.
+servers:
+  - url: /api
+    description: Relative to wherever the frontend is served from.
+tags:
+  - name: Parties
+    description: Waitlist entries. Also the source of the History log (all statuses, never deleted).
+  - name: Tables
+    description: Floor table status board.
+security: []
+paths:
+  /parties:
+    get:
+      tags: [Parties]
+      summary: List all parties
+      description: >
+        Returns every party regardless of status. The frontend filters this
+        client-side: the Waitlist view keeps `status: waiting` sorted by `order`;
+        the History view shows everything sorted by `createdAt` descending.
+      operationId: listParties
+      responses:
+        '200':
+          description: All parties.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Party'
+    post:
+      tags: [Parties]
+      summary: Add a party to the waitlist
+      description: >
+        Creates a new party with `status: waiting`. The server assigns `id`,
+        `order` (placing it last among waiting parties), `createdAt`, `updatedAt`,
+        and `seatedAt: null`.
+      operationId: createParty
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewPartyInput'
+      responses:
+        '201':
+          description: The created party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /parties/{id}:
+    patch:
+      tags: [Parties]
+      summary: Edit a party's details
+      description: >
+        Updates the editable fields of a party (name, party size, phone, notes,
+        source, estimated wait). The current UI always submits all six fields
+        together (used for both the "Edit party" form and, implicitly, for the
+        seat/no-show/cancel/recall status transitions below, which are modeled
+        as their own endpoints). Returns the full updated party with a refreshed
+        `updatedAt`.
+      operationId: updateParty
+      parameters:
+        - $ref: '#/components/parameters/PartyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyEditableFields'
+      responses:
+        '200':
+          description: The updated party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /parties/{id}/reorder:
+    post:
+      tags: [Parties]
+      summary: Move a waiting party up or down
+      description: >
+        Swaps the `order` of the given party with its immediate neighbor (among
+        parties with `status: waiting`) in the requested direction. If the party
+        is already first (direction `up`) or last (direction `down`), the list is
+        returned unchanged. Only parties with `status: waiting` participate in
+        reordering.
+      operationId: reorderParty
+      parameters:
+        - $ref: '#/components/parameters/PartyId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReorderRequest'
+      responses:
+        '200':
+          description: >
+            All parties (every status), reflecting the new `order` values. The
+            frontend re-derives its waitlist view from this full list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Party'
+        '404':
+          description: No waiting party with this id exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /parties/{id}/seat:
+    post:
+      tags: [Parties]
+      summary: Mark a party as seated
+      description: "Sets `status: seated` and `seatedAt` to the current time."
+      operationId: seatParty
+      parameters:
+        - $ref: '#/components/parameters/PartyId'
+      responses:
+        '200':
+          description: The updated party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /parties/{id}/no-show:
+    post:
+      tags: [Parties]
+      summary: Mark a party as a no-show
+      description: "Sets `status: no-show`. The entry is kept, never deleted."
+      operationId: markPartyNoShow
+      parameters:
+        - $ref: '#/components/parameters/PartyId'
+      responses:
+        '200':
+          description: The updated party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /parties/{id}/cancel:
+    post:
+      tags: [Parties]
+      summary: Cancel a party
+      description: "Sets `status: cancelled`. The entry is kept, never deleted."
+      operationId: cancelParty
+      parameters:
+        - $ref: '#/components/parameters/PartyId'
+      responses:
+        '200':
+          description: The updated party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /parties/{id}/recall:
+    post:
+      tags: [Parties]
+      summary: Return a party to the waitlist
+      description: >
+        Sets `status: waiting` again. Used from the History screen to recall a
+        party previously marked `no-show` or `cancelled`.
+      operationId: recallParty
+      parameters:
+        - $ref: '#/components/parameters/PartyId'
+      responses:
+        '200':
+          description: The updated party.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /tables:
+    get:
+      tags: [Tables]
+      summary: List all tables
+      operationId: listTables
+      responses:
+        '200':
+          description: All tables.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/RestaurantTable'
+    post:
+      tags: [Tables]
+      summary: Add a table
+      description: "Creates a new table with `status: open`."
+      operationId: createTable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewTableInput'
+      responses:
+        '201':
+          description: The created table.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestaurantTable'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /tables/{id}:
+    patch:
+      tags: [Tables]
+      summary: Update a table's status
+      description: >
+        Sets the table's `status` (`open` / `occupied` / `dirty`). This is the
+        only field the UI ever changes after creation.
+      operationId: updateTableStatus
+      parameters:
+        - $ref: '#/components/parameters/TableId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TableStatusUpdate'
+      responses:
+        '200':
+          description: The updated table.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestaurantTable'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [Tables]
+      summary: Remove a table
+      operationId: deleteTable
+      parameters:
+        - $ref: '#/components/parameters/TableId'
+      responses:
+        '204':
+          description: Table removed.
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    PartyId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    TableId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    NotFound:
+      description: No resource with this id exists.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    BadRequest:
+      description: The request body failed validation.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    PartySource:
+      type: string
+      enum: [walk-in, call-ahead]
+      description: >
+        How the party was added. Call-ahead entries are shown with a distinct
+        badge on the Waitlist and History screens.
+
+    PartyStatus:
+      type: string
+      enum: [waiting, seated, no-show, cancelled]
+
+    TableStatus:
+      type: string
+      enum: [open, occupied, dirty]
+
+    Party:
+      type: object
+      required:
+        - id
+        - name
+        - partySize
+        - phone
+        - notes
+        - source
+        - estimatedWaitMinutes
+        - status
+        - order
+        - createdAt
+        - updatedAt
+        - seatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        partySize:
+          type: integer
+          minimum: 1
+        phone:
+          type: string
+          description: Free-form phone number. May be an empty string.
+        notes:
+          type: string
+          description: Free-form notes. May be an empty string.
+        source:
+          $ref: '#/components/schemas/PartySource'
+        estimatedWaitMinutes:
+          type: integer
+          minimum: 0
+          description: Host-entered estimate. Never computed by the server.
+        status:
+          $ref: '#/components/schemas/PartyStatus'
+        order:
+          type: integer
+          description: >
+            Sort key among parties with `status: waiting`; lower values come
+            first. Not meaningful for other statuses.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        seatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set when `status` transitions to `seated`; `null` otherwise.
+
+    NewPartyInput:
+      type: object
+      required:
+        - name
+        - partySize
+        - phone
+        - notes
+        - source
+        - estimatedWaitMinutes
+      properties:
+        name:
+          type: string
+          minLength: 1
+        partySize:
+          type: integer
+          minimum: 1
+        phone:
+          type: string
+        notes:
+          type: string
+        source:
+          $ref: '#/components/schemas/PartySource'
+        estimatedWaitMinutes:
+          type: integer
+          minimum: 0
+
+    PartyEditableFields:
+      type: object
+      description: >
+        Partial update to a party's editable fields. The current frontend
+        always sends all six properties together, but none are required by
+        the contract.
+      properties:
+        name:
+          type: string
+          minLength: 1
+        partySize:
+          type: integer
+          minimum: 1
+        phone:
+          type: string
+        notes:
+          type: string
+        source:
+          $ref: '#/components/schemas/PartySource'
+        estimatedWaitMinutes:
+          type: integer
+          minimum: 0
+
+    ReorderRequest:
+      type: object
+      required:
+        - direction
+      properties:
+        direction:
+          type: string
+          enum: [up, down]
+
+    RestaurantTable:
+      type: object
+      required:
+        - id
+        - label
+        - seats
+        - status
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        label:
+          type: string
+          description: e.g. "T1" or "Patio 2".
+        seats:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/TableStatus'
+        updatedAt:
+          type: string
+          format: date-time
+
+    NewTableInput:
+      type: object
+      required:
+        - label
+        - seats
+      properties:
+        label:
+          type: string
+          minLength: 1
+        seats:
+          type: integer
+          minimum: 1
+
+    TableStatusUpdate:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/TableStatus'
+
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
