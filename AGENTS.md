@@ -9,7 +9,7 @@ TableReady — a lean, host-controlled waitlist and table-status tool for a sing
 - `frontend/` — implemented (Waitlist, Tables, History screens, fully interactive).
 - `openapi.yaml` (repo root) — the API contract the frontend expects, derived from `frontend/src/api/client.ts`.
 - `backend/` — implemented (FastAPI, matches `openapi.yaml`, in-memory mock store — no real database yet).
-- The frontend still talks to its own mock (`frontend/src/api/client.ts`), not `backend/`, yet. Wiring them together (pointing `client.ts` at `backend/`'s endpoints) is the next step.
+- `frontend/src/api/client.ts` now calls `backend/` directly over HTTP (`/api/...`, proxied to it by Vite in dev — see `frontend/vite.config.ts`). The frontend's own mock (`mockBackend.ts`) has been removed.
 
 ## Frontend
 
@@ -28,9 +28,8 @@ npm run lint      # oxlint
 ```
 frontend/src/
   api/
-    types.ts        # domain types (Party, RestaurantTable, ...)
-    client.ts        # the ONLY module the UI should import backend calls from
-    mockBackend.ts    # in-memory + localStorage mock "server" — client.ts internals only
+    types.ts        # domain types (Party, RestaurantTable, ...) — mirrors openapi.yaml
+    client.ts        # the ONLY module the UI should import backend calls from; fetches backend/
   state/              # React contexts wrapping api/client.ts (PartiesContext, TablesContext)
   pages/              # WaitlistPage, TablesPage, HistoryPage
   components/         # presentational pieces used by pages
@@ -39,10 +38,15 @@ frontend/src/
 
 ### Conventions
 
-- **All backend access goes through `src/api/client.ts`.** Nothing outside `api/` should import `mockBackend.ts` directly. When a real backend exists, only `client.ts` needs to change (swap method bodies for `fetch` calls) — signatures should stay the same so pages/state don't need edits.
+- **All backend access goes through `src/api/client.ts`.** It's a thin `fetch` wrapper over
+  `backend/`'s endpoints, using relative `/api/...` paths (matching `openapi.yaml`'s `servers`
+  entry) so it works unchanged through Vite's dev proxy or a same-origin production deploy.
+  Nothing else in the app should call `fetch` directly.
 - State is shared via `PartiesProvider` / `TablesProvider` (React Context) rather than prop-drilling or a global store library.
 - No routing library — tab switching in `App.tsx` is plain `useState`, since this is a single-device, single-screen-at-a-time app per the spec (no auth, no multi-page deep-linking requirement).
-- Mock data persists to `localStorage` (`tableready:v1`) so the demo survives a page refresh, mirroring the spec's requirement that the waitlist/history isn't session-only.
+- The Tables page uses a wider container (`max-w-5xl`) than Waitlist/History (`max-w-3xl`): its
+  3-button-per-card status row needs more room per column at the 4-column breakpoint, or labels
+  truncate. Keep this in mind before changing either page's grid/column breakpoints.
 
 ## Backend
 
@@ -84,3 +88,6 @@ backend/tests/
 - `store.py` is the only place holding restaurant state; routers never touch dicts directly.
   Swapping in a real database later should only mean rewriting `Store`'s methods.
 - No authentication — matches the frontend, which sends no credentials yet.
+- CORS (`main.py`) only allowlists local dev origins (5173/4173) as a fallback for hitting the
+  backend directly; the frontend dev server proxies `/api/*` instead (same-origin, no CORS
+  needed) — see `frontend/vite.config.ts`.

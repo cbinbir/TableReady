@@ -11,7 +11,7 @@ export function TablesPage() {
   const openCount = tables.filter((t) => t.status === 'open').length
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 px-4 py-5 sm:px-6">
+    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-4 px-4 py-5 sm:px-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100">Tables</h1>

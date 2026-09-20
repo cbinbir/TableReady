@@ -1,7 +1,7 @@
 // Shared domain types for TableReady.
 // These describe the shape of data flowing through src/api/client.ts,
-// which is the single boundary between the UI and the backend
-// (currently mocked — see src/api/mockBackend.ts).
+// which is the single boundary between the UI and the backend. Mirrors the
+// schemas in openapi.yaml (and backend/src/tableready_backend/models.py).
 
 export type PartySource = 'walk-in' | 'call-ahead'
 

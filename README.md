@@ -8,7 +8,20 @@ A lean, host-controlled waitlist and table-status tool for a single restaurant. 
 - **API contract**: [`openapi.yaml`](openapi.yaml) — every endpoint the frontend expects from a backend.
 - **Backend**: implemented in [`backend/`](backend) — FastAPI, matching `openapi.yaml`, backed by an in-memory mock store (no real database yet).
 
-The frontend currently talks to its own mock API layer (`frontend/src/api/client.ts`), not yet to `backend/`; wiring them together is the next step.
+The frontend now calls `backend/` directly (`frontend/src/api/client.ts` makes real `fetch` requests) — its own mock has been removed.
+
+## Running both together
+
+```bash
+# terminal 1
+cd backend && uv sync && uv run uvicorn tableready_backend.main:app --reload
+
+# terminal 2
+cd frontend && npm install && npm run dev
+```
+
+Vite's dev server proxies `/api/*` to the backend (see `frontend/vite.config.ts`), so the frontend
+never needs an absolute URL or CORS config — open `http://localhost:5173`.
 
 ## Frontend
 
